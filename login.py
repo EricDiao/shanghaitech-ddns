@@ -130,6 +130,7 @@ class DNSUpdater:
             self.status = False
 
 def main(username,passwd,domain,key,interval):
+    ip = None
     logger.warning('ShanghiaTech Wirless Network Auth')
     logger.warning('Using username: %s', username)
     if domain != None:
@@ -137,21 +138,22 @@ def main(username,passwd,domain,key,interval):
     logger.warning('Waiting time: %s s',interval)
     login = Loginer(username,passwd)
     update = DNSUpdater(domain,key)
-    try:
-        ip = socket.getaddrinfo(domain,None)[0][4][0]
-        logger.info('Current IP for %s is %s',domain,ip)
-    except:
-        ip = None
-        logger.warning('Failed to fetch IP for %s',domain)
+    if domain != None:
+        try:
+            ip = socket.getaddrinfo(domain,None)[0][4][0]
+            logger.info('Current IP for %s is %s',domain,ip)
+        except:
+            ip = None
+            logger.warning('Failed to fetch IP for %s',domain)
     while True:
         if disconnected():
             login.login()
             login.sync()
             if login.status == True:
-                if ip != login.ip:
+                if domain != None and ip != login.ip:
                     ip = login.ip
                     update.update(ip)
-                else:
+                elif ip != None:
                     logger.info('Dont need to update...')
                     update.status = True
             else:
@@ -165,12 +167,13 @@ def main(username,passwd,domain,key,interval):
                 if login.status == False:
                     logger.error('Login failed, exit.')
                     exit(-1)
-                elif ip != login.ip:
+                elif ip != login.ip and domain != None:
                     ip = login.ip
                     update.update(ip)
-            if update.status == False:
-                logger.error('Encountered error when updating DNS, exit.')
-                exit(-1)
+            if domain != None:
+                if update.status == False:
+                    logger.error('Encountered error when updating DNS, exit.')
+                    exit(-1)
         logger.debug('Sleep %s s...',interval)
         wait(interval)
 
@@ -193,7 +196,7 @@ def argvparser():
             interval = int(sys.argv[i+2])
         elif argv == '-D':
             deamon = True
-    for ke in (username,passwd,domain,key):
+    for ke in (username,passwd):
         if ke == None:
             exit(-1)
 
