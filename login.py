@@ -40,20 +40,20 @@ class Loginer:
               'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/62.0.3202.94 Safari/537.36'}
         obj = requests.post(url, headers=header,data=data)
         if obj.status_code == requests.codes.ok:
-            logger.debug('Auth Server returns %s',obj.status_code)
+            logger.info('Auth Server returns %s',obj.status_code)
             response = obj.json()
             if response['success'] == True:
-                logger.debug("Auth Success...")
+                logger.info("Auth Success...")
                 self.ip = response[u'data'][u'ip']
-                logger.debug('IP: %s',self.ip)
+                logger.info('IP: %s',self.ip)
                 self.sessionID = response['data']['sessionId']
                 self.token = response['token'][6:]
                 self.status = True
             else:
-                logger.debug('Auth failed')
+                logger.info('Auth failed')
                 self.status = False
         else:
-            logger.debug('Auth Server returns %s',obj.status_code)
+            logger.info('Auth Server returns %s',obj.status_code)
             self.status = False
 
     def sync(self):
@@ -70,13 +70,13 @@ class Loginer:
         for i in range(30):
             obj = requests.post(url, headers=header,data=data)
             if obj.status_code == requests.codes.ok:
-                logger.debug('Sync Server returns %s', obj.status_code)
+                logger.info('Sync Server returns %s', obj.status_code)
                 response = obj.json()
                 status = response['data']['portalAuthStatus']
                 if status == 0:
-                    logger.debug('Waiting...')
+                    logger.info('Waiting...')
                 elif status == 1:
-                    logger.debug('Connected.')
+                    logger.info('Connected.')
                     break
                 elif status == 2:
                     logger.warning('Auth Failed!')
@@ -95,7 +95,7 @@ class Loginer:
                         logger.warning('Auth Failed!')
                         break
             else:
-                logger.debug('Sync Server returns %s',obj.status_code)
+                logger.info('Sync Server returns %s',obj.status_code)
                 self.status = False
             wait(3)
 
@@ -115,12 +115,12 @@ class DNSUpdater:
                     "myip":ip}
         obj = requests.post(url, data=payload)
         if obj.status_code == requests.codes.ok:
-            logger.debug('DDNS Server returns %s',obj.status_code)
+            logger.info('DDNS Server returns %s',obj.status_code)
             if obj.text == 'good ' + ip:
-                logger.debug('Updated, server returns %s',obj.text)
+                logger.info('Updated, server returns %s',obj.text)
                 self.status = True
             elif obj.text[0:5] == 'nochg':
-                logger.debug('Wont change, server returns %s',obj.text)
+                logger.info('Wont change, server returns %s',obj.text)
                 self.status = True
             else:
                 logger.warning('DDNS failed: '+obj.text)
@@ -139,37 +139,38 @@ def main(username,passwd,domain,key,interval):
     update = DNSUpdater(domain,key)
     try:
         ip = socket.getaddrinfo(domain,None)[0][4][0]
-        logger.debug('Current IP for %s is %s',domain,ip)
+        logger.info('Current IP for %s is %s',domain,ip)
     except:
         ip = None
         logger.warning('Failed to fetch IP for %s',domain)
     while True:
-        login.login()
-        login.sync()
-        if login.status == True:
-            if ip != login.ip:
-                ip = login.ip
-                update.update(ip)
+        if disconnected():
+            login.login()
+            login.sync()
+            if login.status == True:
+                if ip != login.ip:
+                    ip = login.ip
+                    update.update(ip)
+                else:
+                    logger.info('Dont need to update...')
+                    update.status = True
             else:
-                logger.debug('Dont need to update...')
-                update.status = True
-        else:
-            logger.warning('Login Failed, retrying for 3 times...')
-            for i in range(3):
-                login.login()
-                login.sync()
-                if login.status == True:
-                    break
-                wait(30)
-            if login.status == False:
-                logger.error('Login failed, exit.')
+                logger.warning('Login Failed, retrying for 3 times...')
+                for i in range(3):
+                    login.login()
+                    login.sync()
+                    if login.status == True:
+                        break
+                    wait(30)
+                if login.status == False:
+                    logger.error('Login failed, exit.')
+                    exit(-1)
+                elif ip != login.ip:
+                    ip = login.ip
+                    update.update(ip)
+            if update.status == False:
+                logger.error('Encountered error when updating DNS, exit.')
                 exit(-1)
-            elif ip != login.ip:
-                ip = login.ip
-                update.update(ip)
-        if update.status == False:
-            logger.error('Encountered error when updating DNS, exit.')
-            exit(-1)
         logger.debug('Sleep %s s...',interval)
         wait(interval)
 
@@ -196,6 +197,13 @@ def argvparser():
         if ke == None:
             exit(-1)
 
+def disconnected(host="http://www.v2ex.com/generate_204"):
+    r = requests.get(host)
+    if r.status_code != 204:
+        logger.warning('Disconnected %s',r.status_code)
+        return True
+    return False
+
 if __name__ == '__main__':
     logger = logging.getLogger()
     handler = logging.StreamHandler()
@@ -206,7 +214,7 @@ if __name__ == '__main__':
     hdlr.setFormatter(formatter)
     logger.addHandler(handler)
     logger.addHandler(hdlr)
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.INFO)
     argvparser()
     #if deamon == True:
     #    logger.warning('Running in background...')
