@@ -24,6 +24,8 @@ class Loginer:
         self.passwd = passwd
         self.status = False
         self.ip = None
+        self.sessionID = None
+        self.token = None
 
     def login(self):
         url = 'https://controller.shanghaitech.edu.cn:8445/PortalServer/Webauth/webAuthAction!login.action'
@@ -44,6 +46,8 @@ class Loginer:
                 logger.debug("Auth Success...")
                 self.ip = response[u'data'][u'ip']
                 logger.debug('IP: %s',self.ip)
+                self.sessionID = response['data']['sessionId']
+                self.token = response['token'][6:]
                 self.status = True
             else:
                 logger.debug('Auth failed')
@@ -51,6 +55,49 @@ class Loginer:
         else:
             logger.debug('Auth Server returns %s',obj.status_code)
             self.status = False
+
+    def sync(self):
+        url = 'https://controller.shanghaitech.edu.cn:8445/PortalServer/Webauth/webAuthAction!syncPortalAuthResult.action'
+        data = {'clientIp': self.ip,
+            'browserFlag': 'zh'}
+        header = {'Accept': '*/*',
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'JSESSIONID': getRandomString(32),
+              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/62.0.3202.94 Safari/537.36',
+              'X-Requested-With': 'XMLHttpRequest',
+              'X-XSRF-TOKEN': self.token,
+              'Cookie': 'JSESSIONID='+self.sessionID+'; '+'XSRF_TOKEN='+self.token}
+        for i in range(30):
+            obj = requests.post(url, headers=header,data=data)
+            if obj.status_code == requests.codes.ok:
+                logger.debug('Sync Server returns %s', obj.status_code)
+                response = obj.json()
+                status = response['data']['portalAuthStatus']
+                if status == 0:
+                    logger.debug('Waiting...')
+                elif status == 1:
+                    logger.debug('Connected.')
+                    break
+                elif status == 2:
+                    logger.warning('Auth Failed!')
+                    self.status = False
+                    break
+                else:
+                    self.status = False
+                    errorcode = response['data']['portalErrorCode']
+                    if errorcode == 5:
+                        logger.error('Exceed maximum device capacity!')
+                    elif errorcode == 101:
+                        logger.error('Passcode error!')
+                    elif errorcode == 8000:
+                        logger.warning('Radius relay auth failed, errorcode = %s', errorcode - 8000)
+                    else:
+                        logger.warning('Auth Failed!')
+                        break
+            else:
+                logger.debug('Sync Server returns %s',obj.status_code)
+                self.status = False
+            wait(3)
 
 class DNSUpdater:
 
@@ -98,6 +145,7 @@ def main(username,passwd,domain,key,interval):
         logger.warning('Failed to fetch IP for %s',domain)
     while True:
         login.login()
+        login.sync()
         if login.status == True:
             if ip != login.ip:
                 ip = login.ip
@@ -109,6 +157,7 @@ def main(username,passwd,domain,key,interval):
             logger.warning('Login Failed, retrying for 3 times...')
             for i in range(3):
                 login.login()
+                login.sync()
                 if login.status == True:
                     break
                 wait(30)
