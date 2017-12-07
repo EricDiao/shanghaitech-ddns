@@ -1,3 +1,5 @@
+#!/usr/bin/python3
+
 import requests
 import time
 import json
@@ -85,13 +87,15 @@ def main(username,passwd,domain,key,interval):
     logger.warning('Using username: %s', username)
     if domain != None:
         logger.warning('Updating DNS for domain: %s',domain)
+    logger.warning('Waiting time: %s s',interval)
     login = Loginer(username,passwd)
     update = DNSUpdater(domain,key)
     try:
         ip = socket.getaddrinfo(domain,None)[0][4][0]
-        logger.debug('Current ip for %s is %s',domain,ip)
+        logger.debug('Current IP for %s is %s',domain,ip)
     except:
         ip = None
+        logger.warning('Failed to fetch IP for %s',domain)
     while True:
         login.login()
         if login.status == True:
@@ -99,6 +103,7 @@ def main(username,passwd,domain,key,interval):
                 ip = login.ip
                 update.update(ip)
             else:
+                logger.debug('Dont need to update...')
                 update.status = True
         else:
             logger.warning('Login Failed, retrying for 3 times...')
@@ -116,6 +121,7 @@ def main(username,passwd,domain,key,interval):
         if update.status == False:
             logger.error('Encountered error when updating DNS, exit.')
             exit(-1)
+        logger.debug('Sleep %s s...',interval)
         wait(interval)
 
 def argvparser():
